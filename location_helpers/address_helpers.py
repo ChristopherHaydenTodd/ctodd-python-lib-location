@@ -10,11 +10,13 @@
 import logging
 import usaddress
 import re
+import requests
+from bs4 import BeautifulSoup
 from streetaddress import StreetAddressFormatter, StreetAddressParser
 
 
 ###
-# Address Helpers
+# Address Parsers
 ###
 
 
@@ -64,11 +66,6 @@ def convert_string_address_to_dict(address_string, expected_fields=None):
             break
 
     return parsed_address
-
-
-###
-# Library Calls
-###
 
 
 def parse_address_using_lib_usaddress(address_string):
@@ -163,3 +160,60 @@ def parse_address_using_lib_streetaddress(address_string):
             streetaddress_result[address_key] = address_value
 
     return streetaddress_result
+
+
+###
+# Address Locators
+###
+
+
+def search_google_for_address(address_query_string):
+    """
+    Purpose:
+        Get address from Google (if possible) based on a query string
+
+        Note: Works best with a company name, city, state if the company has
+        an address posted
+
+        Examples of Working Queries:
+            - "Deptford Best Buy"
+            - "Two Six Labs Mount Laurel NJ"
+            - "Taco Bell Mantua"
+    Args:
+        raw_query (String): Raw string for searching on Google
+    Returns:
+        raw_search_html (Dict): Raw HTML of the Google search
+    """
+    logging.info(f"Searching for Address for: {address_query_string}")
+
+    address = None
+
+    # Preparing Search
+    regex_remove_characters = r"[^A-Za-z0-9]+"
+    address_query_string = re.sub(
+        regex_remove_characters, " ", address_query_string
+    ).replace(" ", "+").strip().lower()
+
+    # Requesting HTML From Google
+    google_search_url = f"https://www.google.com/search?q={address_query_string}"
+    google_search_response = requests.get(google_search_url)
+
+    # import gnureadline, pdb; pdb.set_trace()
+    if google_search_response.status_code == 200:
+        raw_search_html = google_search_response.text
+    else:
+        logging.error(
+            f"Got Failure Response from Google.com: {search_url}"
+            f"{google_search_response.status_code}"
+        )
+        raw_search_html = None
+
+
+    google_search_soup = BeautifulSoup(raw_search_html, "html.parser")
+    details_spans = google_search_soup.findAll("span", {"class": "BNeawe"})
+
+    details = {}
+    for idx in range(0, len(details_spans), 2):
+        details[details_spans[idx].text.lower()] = details_spans[idx+1].text
+
+    return details.get("address", None)
